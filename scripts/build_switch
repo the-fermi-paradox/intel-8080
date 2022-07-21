@@ -1,0 +1,7 @@
+#!/usr/bin/awk -f
+# This script is meant to take the output of build enum to build the contents of a switch statement
+{
+  printf("  case %s:\n    break;\n", $1)
+}
+# break apart every 16 lines for legibility
+NR % 16 == 0 { printf("\n") }

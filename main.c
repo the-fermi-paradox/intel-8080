@@ -2,74 +2,168 @@
 #include <stdlib.h>
 #include <opcodes.h>
 
+static uint8_t memory[(uint16_t) -1] = {0};
+
 /* register array */
-enum RegCode {B = 0, C = 1, D = 2, E = 3, H = 4, L = 5, PSW = 6, A = 7, RG_COUNT};
+enum RegCode {rB = 0, rC = 1, rD = 2, rE = 3, rH = 4, rL = 5, rPSW = 6, rA = 7, RG_COUNT};
+
+/* masks */
+#define PMSB_8 7U
+#define PLSB_8 0U
+#define MSB_8 1U << PMSB_8
+#define LSB_8 1U << PLSB_8
 
 /* flags */
-#define FLAG_S  1U << 7U
-#define FLAG_Z  1U << 6U
-#define FLAG_AC 1U << 4U
-#define FLAG_P  1U << 2U
-#define FLAG_CY 1U << 0U
-#define FLAG_ON(bitset, bit)  (bitset | bit)
-#define FLAG_OFF(bitset, bit) (bitset & ~(bit))
+static uint8_t flags = 0;
+#define FLAG_S  7U
+#define FLAG_Z  6U
+#define FLAG_AC 4U
+#define FLAG_P  2U
+#define FLAG_CY 0U
+
+static inline uint8_t emu8080_set_bit(uint8_t bitfield, uint8_t pos, _Bool x) {
+  return ((bitfield & ~(1 << pos)) | (x << pos));
+}
+
+static inline uint8_t emu8080_right_rotate(uint8_t bitfield) {
+  return (bitfield >> 1) | (bitfield << (sizeof(uint8_t) - 1));
+}
+
+static inline uint8_t emu8080_left_rotate(uint8_t bitfield) {
+  return (bitfield << 1) | (bitfield >> (sizeof(uint8_t) - 1));
+}
+
+static inline uint8_t emu8080_lrotate_c(uint8_t* reg) {
+  *reg = emu8080_left_rotate(*reg);
+  /* set the carry bit to A's LSB */
+  flags |= (*reg & LSB_8);
+  return *reg;
+}
+
+static inline uint8_t emu8080_rrotate_c(uint8_t* reg) {
+  *reg = emu8080_right_rotate(*reg);
+  /* set the carry bit to A's MSB */
+  flags |= ((*reg & MSB_8) >> 7);
+  return *reg;
+}
+
+static inline uint8_t emu8080_incr_reg(uint8_t* reg) {
+  return ++(*reg);
+}
+
+static inline uint8_t emu8080_decr_reg(uint8_t* reg) {
+  return --(*reg);
+}
+
+static inline uint8_t emu8080_assn_reg(uint8_t* reg, uint8_t val) {
+  return *reg = val;
+}
+
+/* returns the hi part; sets the value of the lo part */
+static inline uint8_t emu8080_split16(uint16_t num, uint8_t* lo) {
+  uint16_t hi = (0xf0 & num) >> 8;
+  *lo = (uint8_t) (0x0f & num);
+  return (uint8_t) hi;
+}
+
+static inline uint16_t emu8080_merge_rp(uint8_t* hi) {
+  return ((uint16_t) (*hi) << 8) | *(hi + 1);
+}
+
+static inline uint8_t emu8080_assn_rp(uint8_t* hi, uint8_t b1, uint8_t b2) {
+  *hi = b1;
+  *(hi + 1) = b2;
+  return *hi;
+}
+
+static inline uint8_t emu8080_incr_rp(uint8_t* hi) {
+  uint16_t rp = emu8080_merge_rp(hi);
+  *hi = emu8080_split16(rp + 1, hi + 1);
+  return *hi;
+}
+
+static inline uint8_t emu8080_decr_rp(uint8_t* hi) {
+  uint16_t rp = emu8080_merge_rp(hi);
+  *hi = emu8080_split16(rp - 1, hi + 1);
+  return *hi;
+}
+
+static inline uint16_t emu8080_add_rp(uint8_t* src, uint8_t* dest) {
+  uint16_t r1 = emu8080_merge_rp(src);
+  uint16_t r2 = emu8080_merge_rp(dest);
+  uint16_t sum = r1 + r2;
+  /* there's a carry */
+  if (sum < r1)
+    flags |= (1 << FLAG_CY);
+  *dest = emu8080_split16(sum, (dest + 1));
+  return sum;
+}
+
+static inline uint8_t emu8080_read_mem(uint16_t address) {
+  return memory[address];
+}
+
+static inline uint8_t emu8080_write_mem(uint16_t address, uint8_t val) {
+  return memory[address] = val;
+}
+
+static inline uint8_t emu8080_write_memrp(uint8_t* hi, uint8_t val) {
+  return emu8080_write_mem(emu8080_merge_rp(hi), val);
+}
+
+static inline uint8_t emu8080_read_memrp(uint8_t* hi) {
+  return emu8080_read_mem(emu8080_merge_rp(hi));  
+}
 
 int main(int argc, char** argv)
 {
-  uint8_t registers[RG_COUNT] = {
-    [B] = 0,
-    [C] = 0,
-    [D] = 0,
-    [E] = 0,
-    [H] = 0,
-    [L] = 0,
-    [PSW] = 0,
-    [A] = 0,
+  /* stored in order Hi/Lo */
+  uint8_t reg[RG_COUNT] = {
+    [rB]   = 0,
+    [rC]   = 0,
+    [rD]   = 0,
+    [rE]   = 0,
+    [rH]   = 0,
+    [rL]   = 0,
+    [rPSW] = 0,
+    [rA]   = 0,
   };
-  uint16_t sp = 0;
-  uint16_t pc = 0;
-  /* registers */
-  uint8_t memory[(uint16_t) -1] = {0};
+  uint8_t* B = reg + rB;
+  uint8_t* C = reg + rC;
+  uint8_t* D = reg + rD;
+  uint8_t* E = reg + rE;
+  uint8_t* H = reg + rH;
+  uint8_t* L = reg + rL;
+  uint8_t* PSW = reg + rPSW;
+  uint8_t* A = reg + rA;
+
+  /* reg */
+  uint8_t* pc = memory;
+  uint8_t* sp = NULL;
   /* TODO: Load program into memory */
   /* TODO: Initialize program counter to first instruction of program */
   /* Processor Cycle */
   for (;;) {
     /* TODO: Fetch instruction */
-    enum OpCode opcode = *(memory + pc);
+    enum OpCode opcode = *pc++;
     /* TODO: Op Code switch statement */
     switch (opcode) {
-      case NOP:
-        break;
-      case LXI_B:
-        break;
-      case STAX_B:
-        break;
-      case INX_B:
-        break;
-      case INR_B:
-        break;
-      case DCR_B:
-        break;
-      case MVI_B:
-        break;
-      case RLC:
-        break;
-      case DSUB:
-        break;
-      case DAD_B:
-        break;
-      case LDAX_B:
-        break;
-      case DCX_B:
-        break;
-      case INR_C:
-        break;
-      case DCR_C:
-        break;
-      case MVI_C:
-        break;
-      case RRC:
-        break;
+      case NOP:    break;
+      case LXI_B:  emu8080_assn_rp(B, *(pc), *(pc + 1)); pc += 2; break;
+      case STAX_B: emu8080_write_memrp(B, *A); break;
+      case INX_B:  emu8080_incr_rp(B); break;
+      case INR_B:  emu8080_incr_reg(B); break;
+      case DCR_B:  emu8080_decr_reg(B); break;
+      case MVI_B:  emu8080_assn_reg(B, *pc++); break;
+      case RLC:    emu8080_lrotate_c(A); break;
+      case DSUB:   break; /* Not implemented in 8080 */
+      case DAD_B:  emu8080_add_rp(B, H); break;
+      case LDAX_B: emu8080_assn_reg(A, emu8080_read_memrp(B)); break;
+      case DCX_B:  emu8080_decr_rp(B); break;
+      case INR_C:  emu8080_incr_reg(C); break;
+      case DCR_C:  emu8080_decr_reg(C); break;
+      case MVI_C:  emu8080_assn_reg(C, *pc++); break;
+      case RRC:    emu8080_rrotate_c(A); break;
 
       case AHRL:
         break;

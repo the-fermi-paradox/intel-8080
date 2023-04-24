@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <opcodes.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 /* Define the registers */
 struct Registers {
@@ -351,142 +352,222 @@ int main(void)
                 DECR_REG(a);
                 break;
             case MVI_A:
+                regs.a = read_byte(++regs.pc);
                 break;
 
             case CMC:
+                regs.cf = !regs.cf;
                 break;
             case MOV_B_B:
+                regs.b = regs.b;
                 break;
             case MOV_B_C:
+                regs.b = regs.c;
                 break;
             case MOV_B_D:
+                regs.b = regs.d;
                 break;
             case MOV_B_E:
+                regs.b = regs.e;
                 break;
             case MOV_B_H:
+                regs.b = regs.h;
                 break;
             case MOV_B_L:
+                regs.b = regs.l;
                 break;
             case MOV_B_M:
+                address = merge_bytes(regs.l, regs.h);
+                regs.b = read_byte(address);
                 break;
             case MOV_B_A:
+                regs.b = regs.a;
                 break;
             case MOV_C_B:
+                regs.c = regs.b;
                 break;
             case MOV_C_C:
+                regs.c = regs.c;
                 break;
             case MOV_C_D:
+                regs.c = regs.d;
                 break;
             case MOV_C_E:
+                regs.c = regs.e;
                 break;
             case MOV_C_H:
+                regs.c = regs.h;
                 break;
             case MOV_C_L:
+                regs.c = regs.l;
                 break;
             case MOV_C_M:
+                address = merge_bytes(regs.l, regs.h);
+                regs.c = read_byte(address);
                 break;
 
 
             case MOV_C_A:
+                regs.c = regs.a;
                 break;
             case MOV_D_B:
+                regs.d = regs.b;
                 break;
             case MOV_D_C:
+                regs.d = regs.c;
                 break;
             case MOV_D_D:
+                regs.d = regs.d;
                 break;
             case MOV_D_E:
+                regs.d = regs.e;
                 break;
             case MOV_D_H:
+                regs.d = regs.h;
                 break;
             case MOV_D_L:
+                regs.d = regs.l;
                 break;
             case MOV_D_M:
+                address = merge_bytes(regs.l, regs.h);
+                regs.d = read_byte(address);
                 break;
             case MOV_D_A:
+                regs.d = regs.a;
                 break;
             case MOV_E_B:
+                regs.e = regs.b;
                 break;
             case MOV_E_C:
+                regs.e = regs.c;
                 break;
             case MOV_E_D:
+                regs.e = regs.d;
                 break;
             case MOV_E_E:
+                regs.e = regs.e;
                 break;
             case MOV_E_H:
+                regs.e = regs.h;
                 break;
             case MOV_E_L:
+                regs.e = regs.l;
                 break;
             case MOV_E_M:
+                address = merge_bytes(regs.l, regs.h);
+                regs.e = read_byte(address);
                 break;
 
             case MOV_E_A:
+                regs.e = regs.a;
                 break;
             case MOV_H_B:
+                regs.h = regs.b;
                 break;
             case MOV_H_C:
+                regs.h = regs.c;
                 break;
             case MOV_H_D:
+                regs.h = regs.d;
                 break;
             case MOV_H_E:
+                regs.h = regs.e;
                 break;
             case MOV_H_H:
+                regs.h = regs.h;
                 break;
             case MOV_H_L:
+                regs.h = regs.l;
                 break;
             case MOV_H_M:
+                address = merge_bytes(regs.l, regs.h);
+                regs.h = read_byte(address);
                 break;
             case MOV_H_A:
+                regs.h = regs.a;
                 break;
             case MOV_L_B:
+                regs.l = regs.b;
                 break;
             case MOV_L_C:
+                regs.l = regs.c;
                 break;
             case MOV_L_D:
+                regs.l = regs.d;
                 break;
             case MOV_L_E:
+                regs.l = regs.e;
                 break;
             case MOV_L_H:
+                regs.l = regs.h;
                 break;
             case MOV_L_L:
+                regs.l = regs.l;
                 break;
             case MOV_L_M:
+                address = merge_bytes(regs.l, regs.h);
+                regs.l = read_byte(address);
                 break;
 
             case MOV_L_A:
+                regs.l = regs.a;
                 break;
             case MOV_M_B:
+                address = merge_bytes(regs.l, regs.h);
+                write_byte(address, regs.b);
                 break;
             case MOV_M_C:
+                address = merge_bytes(regs.l, regs.h);
+                write_byte(address, regs.c);
                 break;
             case MOV_M_D:
+                address = merge_bytes(regs.l, regs.h);
+                write_byte(address, regs.d);
                 break;
             case MOV_M_E:
+                address = merge_bytes(regs.l, regs.h);
+                write_byte(address, regs.e);
                 break;
             case MOV_M_H:
+                address = merge_bytes(regs.l, regs.h);
+                write_byte(address, regs.h);
                 break;
             case MOV_M_L:
+                address = merge_bytes(regs.l, regs.h);
+                write_byte(address, regs.l);
                 break;
             case HLT:
+                exit(0);
                 break;
             case MOV_M_A:
+                address = merge_bytes(regs.l, regs.h);
+                write_byte(address, regs.a);
                 break;
             case MOV_A_B:
+                regs.a = regs.b;
                 break;
             case MOV_A_C:
+                regs.a = regs.c;
                 break;
             case MOV_A_D:
+                regs.a = regs.d;
                 break;
             case MOV_A_E:
+                regs.a = regs.e;
                 break;
             case MOV_A_H:
+                regs.a = regs.h;
                 break;
             case MOV_A_L:
+                regs.a = regs.l;
                 break;
             case MOV_A_M:
+                address = merge_bytes(regs.l, regs.h);
+                regs.a = read_byte(address);
                 break;
 
             case MOV_A_A:
+                regs.a = regs.a;
                 break;
             case ADD_B:
                 break;

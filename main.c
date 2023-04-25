@@ -110,10 +110,36 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
     regs.cf = tmp & 0x10000;                \
 } while(0)
 
-#define EMRET() do {                       \
-    regs.pcl = read_byte(regs.sp);          \
-    regs.pch = read_byte(regs.sp + 1);      \
-    ++regs.sp;                              \
+#define POP(regl, regh) do {                \
+    regl = read_byte(regs.sp);              \
+    regh = read_byte(regs.sp + 1);          \
+    regs.sp += 2;                           \
+} while(0)
+
+#define PUSH(regl, regh) do { \
+    write_byte(regs.sp - 1, regh);          \
+    write_byte(regs.sp - 2, regl);          \
+    regs.sp -= 2;                           \
+} while(0)
+
+#define RET() do {                          \
+    POP(regs.pcl, regs.pch);                \
+} while(0)
+
+#define JUMP() do {                         \
+    COMPOSE_ADDR();                         \
+    regs.pc = address;                      \
+} while (0)
+
+#define CALL() do {                         \
+    COMPOSE_ADDR();                         \
+    PUSH(regs.pcl, regs.pch);               \
+    regs.pc = address;                      \
+} while(0)
+
+#define RST(val) do {                       \
+    PUSH(regs.pcl, regs.pch);               \
+    regs.pc = 8 * val;                       \
 } while(0)
 
 #define ADD(val, cy) do { \
@@ -132,7 +158,7 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 } while(0)
 
 #define CMP(val) do { \
-    uint16_t tmp = regs.a - (val);            \
+    uint16_t tmp = regs.a - (val);          \
     test_pzs(tmp);                          \
     test_ac(tmp, regs.a, ~(val));           \
     regs.cf = tmp & 0x100;                  \
@@ -148,14 +174,14 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 #define XRA(val) do {                       \
     regs.a ^= (val);                        \
     regs.cf = 0;                            \
-    regs.acf = 0;                            \
+    regs.acf = 0;                           \
     test_pzs(regs.a);                       \
 } while(0)
 
 #define ORA(val) do {                       \
     regs.a |= (val);                        \
     regs.cf = 0;                            \
-    regs.acf = 0;                            \
+    regs.acf = 0;                           \
     test_pzs(regs.a);                       \
 } while(0)
 
@@ -811,67 +837,90 @@ int main(void)
                 CMP(regs.a);
                 break;
             case RNZ:
-                if (!regs.zf) EMRET();
+                if (!regs.zf) RET();
                 break;
             case POP_B:
+                POP(regs.c, regs.b);
                 break;
             case JNZ:
+                if (!regs.zf) JUMP();
                 break;
             case JMP:
+                JUMP();
                 break;
             case CNZ:
+                if (!regs.zf) CALL();
                 break;
             case PUSH_B:
+                PUSH(regs.c, regs.b);
                 break;
             case ADI:
+                res = read_byte(++regs.pc);
+                ADD(res, 0);
                 break;
             case RST_0:
                 break;
             case RZ:
-                if (regs.zf) EMRET();
+                if (regs.zf) RET();
                 break;
             case RET:
-                EMRET();
+                RET();
                 break;
             case JZ:
+                if (regs.zf) JUMP();
                 break;
             case RSTV:
+                /* not implemented in 8080 */
                 break;
             case CZ:
+                if (regs.zf) CALL();
                 break;
             case CALL:
+                CALL();
                 break;
             case ACI:
+                res = read_byte(++regs.pc);
+                ADD(res, regs.cf);
                 break;
 
             case RST_1:
+                RST(1);
                 break;
             case RNC:
-                if (!regs.cf) EMRET();
+                if (!regs.cf) RET();
                 break;
             case POP_D:
+                POP(regs.e, regs.d);
                 break;
             case JNC:
+                if (!regs.cf) JUMP();
                 break;
             case OUT:
                 break;
             case CNC:
+                if (!regs.cf) CALL();
                 break;
             case PUSH_D:
+                PUSH(regs.e, regs.d);
                 break;
             case SUI:
                 break;
             case RST_2:
+                RST(2);
                 break;
             case RC:
+                if (regs.cf) RET();
                 break;
             case SHLX:
+                /* Not implemented in 8080 */
                 break;
             case JC:
+                if (regs.cf) JUMP();
                 break;
             case IN:
                 break;
             case CC:
+                if (regs.cf) CALL();
                 break;
             case JNUI:
                 break;
@@ -879,9 +928,10 @@ int main(void)
                 break;
 
             case RST_3:
+                RST(3);
                 break;
             case RPO:
-                if (regs.pf) EMRET();
+                if (regs.pf) RET();
                 break;
             case POP_H:
                 break;
@@ -896,10 +946,11 @@ int main(void)
             case ANI:
                 break;
             case RST_4:
+                RST(4);
                 break;
             case RPE:
                 if (regs.pf)
-                    EMRET();
+                    RET();
                 break;
             case PCHL:
                 break;
@@ -915,6 +966,7 @@ int main(void)
                 break;
 
             case RST_5:
+                RST(5);
                 break;
             case RP:
                 break;
@@ -931,6 +983,7 @@ int main(void)
             case ORI:
                 break;
             case RST_6:
+                RST(6);
                 break;
             case RM:
                 break;
@@ -948,6 +1001,7 @@ int main(void)
                 break;
 
             case RST_7:
+                RST(7);
                 break;
         }
         if (regs.pc == UINT16_MAX)

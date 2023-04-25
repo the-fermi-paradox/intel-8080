@@ -23,19 +23,24 @@ struct Registers {
         };
         uint16_t hl;
     };
-    bool cf;
-    bool pf;
-    bool acf;
-    bool zf;
-    bool sf;
-    uint8_t a;
-    uint16_t pc;
+    union {
+        struct {
+            uint8_t pcl, pch;
+        };
+        uint16_t pc;
+    };
     union {
         struct {
             uint8_t spl, sph;
         };
         uint16_t sp;
     };
+    bool cf;
+    bool pf;
+    bool acf;
+    bool zf;
+    bool sf;
+    uint8_t a;
 };
 
 static struct Registers regs = {0};
@@ -87,22 +92,71 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
     address = merge_bytes(lo_byte, hi_byte);\
 } while(0)
 
-#define INCR_REG(rg) do {                   \
+#define INR(rg) do {                        \
     ++regs.rg;                              \
     test_pzs(regs.rg);                      \
     test_ac(regs.rg, regs.rg - 1, 0x01);    \
 } while(0)
 
-#define DECR_REG(rg) do {                   \
+#define DCR(rg) do {                        \
     --regs.rg;                              \
     test_pzs(regs.rg);                      \
     test_ac(regs.rg, regs.rg + 1, 0x01);    \
 } while(0)
 
-#define DBLE_ADD(rg) do {                   \
+#define DAD(rg) do {                        \
     uint32_t tmp = regs.hl + regs.rg;       \
     regs.hl = (uint16_t) tmp;               \
     regs.cf = tmp & 0x10000;                \
+} while(0)
+
+#define EMRET() do {                       \
+    regs.pcl = read_byte(regs.sp);          \
+    regs.pch = read_byte(regs.sp + 1);      \
+    ++regs.sp;                              \
+} while(0)
+
+#define ADD(val, cy) do { \
+    uint16_t tmp = regs.a + (val) + (cy);   \
+    test_pzs(tmp);                          \
+    test_ac(tmp, regs.a, (val));            \
+    regs.cf = tmp & 0x100;                  \
+    regs.a = (uint8_t) tmp;                 \
+} while(0)
+
+/* This is just two's complement:
+ * val is complemented, cy is the add bit */
+#define SUB(val, cy) do {                   \
+    ADD(~val, !cy);                         \
+    regs.cf = !regs.cf;                     \
+} while(0)
+
+#define CMP(val) do { \
+    uint16_t tmp = regs.a - (val);            \
+    test_pzs(tmp);                          \
+    test_ac(tmp, regs.a, ~(val));           \
+    regs.cf = tmp & 0x100;                  \
+} while(0)
+
+#define ANA(val) do {                       \
+    regs.a &= (val);                        \
+    regs.cf = 0;                            \
+    regs.acf = ((regs.a | val) & 0x08);     \
+    test_pzs(regs.a);                       \
+} while(0)
+
+#define XRA(val) do {                       \
+    regs.a ^= (val);                        \
+    regs.cf = 0;                            \
+    regs.acf = 0;                            \
+    test_pzs(regs.a);                       \
+} while(0)
+
+#define ORA(val) do {                       \
+    regs.a |= (val);                        \
+    regs.cf = 0;                            \
+    regs.acf = 0;                            \
+    test_pzs(regs.a);                       \
 } while(0)
 
 int main(void)
@@ -129,10 +183,10 @@ int main(void)
                 ++regs.bc;
                 break;
             case INR_B:
-                INCR_REG(b);
+                INR(b);
                 break;
             case DCR_B:
-                DECR_REG(b);
+                DCR(b);
                 break;
             case MVI_B:
                 regs.b = read_byte(++regs.pc);
@@ -145,7 +199,7 @@ int main(void)
                 /* not implemented in 8080 */
                 break;
             case DAD_B:
-                DBLE_ADD(bc);
+                DAD(bc);
                 break;
             case LDAX_B:
                 regs.a = read_byte(regs.bc);
@@ -154,10 +208,10 @@ int main(void)
                 --regs.bc;
                 break;
             case INR_C:
-                INCR_REG(c);
+                INR(c);
                 break;
             case DCR_C:
-                DECR_REG(c);
+                DCR(c);
                 break;
             case MVI_C:
                 regs.c = read_byte(++regs.pc);
@@ -182,10 +236,10 @@ int main(void)
                 ++regs.de;
                 break;
             case INR_D:
-                INCR_REG(d);
+                INR(d);
                 break;
             case DCR_D:
-                DECR_REG(d);
+                DCR(d);
                 break;
             case MVI_D:
                 regs.d = read_byte(++regs.pc);
@@ -201,7 +255,7 @@ int main(void)
                 /* not implemented in 8080 */
                 break;
             case DAD_D:
-                DBLE_ADD(de);
+                DAD(de);
                 break;
             case LDAX_D:
                 regs.a = read_byte(regs.de);
@@ -210,10 +264,10 @@ int main(void)
                 --regs.de;
                 break;
             case INR_E:
-                INCR_REG(e);
+                INR(e);
                 break;
             case DCR_E:
-                DECR_REG(e);
+                DCR(e);
                 break;
             case MVI_E:
                 regs.e = read_byte(++regs.pc);
@@ -243,10 +297,10 @@ int main(void)
                 ++regs.hl;
                 break;
             case INR_H:
-                INCR_REG(h);
+                INR(h);
                 break;
             case DCR_H:
-                DECR_REG(h);
+                DCR(h);
                 break;
             case MVI_H:
                 regs.h = read_byte(++regs.pc);
@@ -276,7 +330,7 @@ int main(void)
                 /* not implemented in 8080 */
                 break;
             case DAD_H:
-                DBLE_ADD(hl);
+                DAD(hl);
                 break;
             case LHLD: {
                 COMPOSE_ADDR();
@@ -288,10 +342,10 @@ int main(void)
                 --regs.hl;
                 break;
             case INR_L:
-                INCR_REG(l);
+                INR(l);
                 break;
             case DCR_L:
-                DECR_REG(l);
+                DCR(l);
                 break;
             case MVI_L:
                 regs.l = read_byte(++regs.pc);
@@ -313,23 +367,20 @@ int main(void)
                 ++regs.sp;
                 break;
             case INR_M:
-                address = merge_bytes(regs.l, regs.h);
-                res = read_byte(address) + 1;
-                write_byte(address, res);
+                res = read_byte(regs.hl) + 1;
+                write_byte(regs.hl, res);
                 test_pzs(res);
                 test_ac(res, res - 1, 0x1);
                 break;
             case DCR_M:
-                address = merge_bytes(regs.l, regs.h);
-                res = read_byte(address) - 1;
-                write_byte(address, res);
+                res = read_byte(regs.hl) - 1;
+                write_byte(regs.hl, res);
                 test_pzs(res);
                 test_ac(res, res + 1, 0x1);
                 break;
             case MVI_M:
-                address = merge_bytes(regs.l, regs.h);
                 res = read_byte(++regs.pc);
-                write_byte(address, res);
+                write_byte(regs.hl, res);
                 break;
             case STC:
                 regs.cf = 1;
@@ -338,7 +389,7 @@ int main(void)
                 /* not implemented in 8080 */
                 break;
             case DAD_SP:
-                DBLE_ADD(sp);
+                DAD(sp);
                 break;
             case LDA:
                 break;
@@ -346,10 +397,10 @@ int main(void)
                 --regs.sp;
                 break;
             case INR_A:
-                INCR_REG(a);
+                INR(a);
                 break;
             case DCR_A:
-                DECR_REG(a);
+                DCR(a);
                 break;
             case MVI_A:
                 regs.a = read_byte(++regs.pc);
@@ -402,8 +453,7 @@ int main(void)
                 regs.c = regs.l;
                 break;
             case MOV_C_M:
-                address = merge_bytes(regs.l, regs.h);
-                regs.c = read_byte(address);
+                regs.c = read_byte(regs.hl);
                 break;
 
 
@@ -429,8 +479,7 @@ int main(void)
                 regs.d = regs.l;
                 break;
             case MOV_D_M:
-                address = merge_bytes(regs.l, regs.h);
-                regs.d = read_byte(address);
+                regs.d = read_byte(regs.hl);
                 break;
             case MOV_D_A:
                 regs.d = regs.a;
@@ -454,8 +503,7 @@ int main(void)
                 regs.e = regs.l;
                 break;
             case MOV_E_M:
-                address = merge_bytes(regs.l, regs.h);
-                regs.e = read_byte(address);
+                regs.e = read_byte(regs.hl);
                 break;
 
             case MOV_E_A:
@@ -480,8 +528,7 @@ int main(void)
                 regs.h = regs.l;
                 break;
             case MOV_H_M:
-                address = merge_bytes(regs.l, regs.h);
-                regs.h = read_byte(address);
+                regs.h = read_byte(regs.hl);
                 break;
             case MOV_H_A:
                 regs.h = regs.a;
@@ -505,43 +552,34 @@ int main(void)
                 regs.l = regs.l;
                 break;
             case MOV_L_M:
-                address = merge_bytes(regs.l, regs.h);
-                regs.l = read_byte(address);
+                regs.l = read_byte(regs.hl);
                 break;
 
             case MOV_L_A:
                 regs.l = regs.a;
                 break;
             case MOV_M_B:
-                address = merge_bytes(regs.l, regs.h);
-                write_byte(address, regs.b);
+                write_byte(regs.hl, regs.b);
                 break;
             case MOV_M_C:
-                address = merge_bytes(regs.l, regs.h);
-                write_byte(address, regs.c);
+                write_byte(regs.hl, regs.c);
                 break;
             case MOV_M_D:
-                address = merge_bytes(regs.l, regs.h);
-                write_byte(address, regs.d);
+                write_byte(regs.hl, regs.d);
                 break;
             case MOV_M_E:
-                address = merge_bytes(regs.l, regs.h);
-                write_byte(address, regs.e);
+                write_byte(regs.hl, regs.e);
                 break;
             case MOV_M_H:
-                address = merge_bytes(regs.l, regs.h);
-                write_byte(address, regs.h);
+                write_byte(regs.hl, regs.h);
                 break;
             case MOV_M_L:
-                address = merge_bytes(regs.l, regs.h);
-                write_byte(address, regs.l);
+                write_byte(regs.hl, regs.l);
                 break;
             case HLT:
                 exit(0);
-                break;
             case MOV_M_A:
-                address = merge_bytes(regs.l, regs.h);
-                write_byte(address, regs.a);
+                write_byte(regs.hl, regs.a);
                 break;
             case MOV_A_B:
                 regs.a = regs.b;
@@ -562,146 +600,218 @@ int main(void)
                 regs.a = regs.l;
                 break;
             case MOV_A_M:
-                address = merge_bytes(regs.l, regs.h);
-                regs.a = read_byte(address);
+                regs.a = read_byte(regs.hl);
                 break;
 
             case MOV_A_A:
                 regs.a = regs.a;
                 break;
             case ADD_B:
+                ADD(regs.b, 0);
                 break;
             case ADD_C:
+                ADD(regs.c, 0);
                 break;
             case ADD_D:
+                ADD(regs.d, 0);
                 break;
             case ADD_E:
+                ADD(regs.e, 0);
                 break;
             case ADD_H:
+                ADD(regs.h, 0);
                 break;
             case ADD_L:
+                ADD(regs.l, 0);
                 break;
             case ADD_M:
+                res = read_byte(regs.hl);
+                ADD(res, 0);
                 break;
             case ADD_A:
+                ADD(regs.a, 0);
                 break;
             case ADC_B:
+                ADD(regs.b, regs.cf);
                 break;
             case ADC_C:
+                ADD(regs.c, regs.cf);
                 break;
             case ADC_D:
+                ADD(regs.d, regs.cf);
                 break;
             case ADC_E:
+                ADD(regs.e, regs.cf);
                 break;
             case ADC_H:
+                ADD(regs.h, regs.cf);
                 break;
             case ADC_L:
+                ADD(regs.l, regs.cf);
                 break;
             case ADC_M:
+                res = read_byte(regs.hl);
+                ADD(res, regs.cf);
                 break;
 
             case ADC_A:
+                ADD(regs.a, regs.cf);
                 break;
             case SUB_B:
+                SUB(regs.b, 0);
                 break;
             case SUB_C:
+                SUB(regs.c, 0);
                 break;
             case SUB_D:
+                SUB(regs.d, 0);
                 break;
             case SUB_E:
+                SUB(regs.e, 0);
                 break;
             case SUB_H:
+                SUB(regs.h, 0);
                 break;
             case SUB_L:
+                SUB(regs.l, 0);
                 break;
             case SUB_M:
+                res = read_byte(regs.hl);
+                SUB(res, 0);
                 break;
             case SUB_A:
+                SUB(regs.a, 0);
                 break;
             case SBB_B:
+                SUB(regs.b, 1);
                 break;
             case SBB_C:
+                SUB(regs.c, 1);
                 break;
             case SBB_D:
+                SUB(regs.d, 1);
                 break;
             case SBB_E:
+                SUB(regs.e, 1);
                 break;
             case SBB_H:
+                SUB(regs.h, 1);
                 break;
             case SBB_L:
+                SUB(regs.l, 1);
                 break;
             case SBB_M:
+                res = read_byte(regs.hl);
+                SUB(res, 1);
                 break;
 
             case SBB_A:
+                SUB(regs.a, 1);
                 break;
             case ANA_B:
+                ANA(regs.b);
                 break;
             case ANA_C:
+                ANA(regs.c);
                 break;
             case ANA_D:
+                ANA(regs.d);
                 break;
             case ANA_E:
+                ANA(regs.e);
                 break;
             case ANA_H:
+                ANA(regs.h);
                 break;
             case ANA_L:
+                ANA(regs.l);
                 break;
             case ANA_M:
+                res = read_byte(regs.hl);
+                ANA(res);
                 break;
             case ANA_A:
+                ANA(regs.a);
                 break;
             case XRA_B:
+                XRA(regs.b);
                 break;
             case XRA_C:
+                XRA(regs.c);
                 break;
             case XRA_D:
+                XRA(regs.d);
                 break;
             case XRA_E:
+                XRA(regs.e);
                 break;
             case XRA_H:
+                XRA(regs.h);
                 break;
             case XRA_L:
+                XRA(regs.l);
                 break;
             case XRA_M:
+                res = read_byte(regs.hl);
+                XRA(res);
                 break;
 
             case XRA_A:
+                XRA(regs.a);
                 break;
             case ORA_B:
+                ORA(regs.b);
                 break;
             case ORA_C:
+                ORA(regs.c);
                 break;
             case ORA_D:
+                ORA(regs.d);
                 break;
             case ORA_E:
+                ORA(regs.e);
                 break;
             case ORA_H:
+                ORA(regs.h);
                 break;
             case ORA_L:
+                ORA(regs.l);
                 break;
             case ORA_M:
+                res = read_byte(regs.hl);
+                ORA(res);
                 break;
             case ORA_A:
+                ORA(regs.a);
                 break;
             case CMP_B:
+                CMP(regs.b);
                 break;
             case CMP_C:
+                CMP(regs.c);
                 break;
             case CMP_D:
+                CMP(regs.d);
                 break;
             case CMP_E:
+                CMP(regs.e);
                 break;
             case CMP_H:
+                CMP(regs.h);
                 break;
             case CMP_L:
+                CMP(regs.l);
                 break;
             case CMP_M:
+                res = read_byte(regs.hl);
+                CMP(res);
                 break;
 
             case CMP_A:
+                CMP(regs.a);
                 break;
             case RNZ:
+                if (!regs.zf) EMRET();
                 break;
             case POP_B:
                 break;
@@ -718,8 +828,10 @@ int main(void)
             case RST_0:
                 break;
             case RZ:
+                if (regs.zf) EMRET();
                 break;
             case RET:
+                EMRET();
                 break;
             case JZ:
                 break;
@@ -735,6 +847,7 @@ int main(void)
             case RST_1:
                 break;
             case RNC:
+                if (!regs.cf) EMRET();
                 break;
             case POP_D:
                 break;
@@ -768,6 +881,7 @@ int main(void)
             case RST_3:
                 break;
             case RPO:
+                if (regs.pf) EMRET();
                 break;
             case POP_H:
                 break;
@@ -784,6 +898,8 @@ int main(void)
             case RST_4:
                 break;
             case RPE:
+                if (regs.pf)
+                    EMRET();
                 break;
             case PCHL:
                 break;

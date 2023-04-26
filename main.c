@@ -43,6 +43,7 @@ struct Registers {
     uint8_t a;
 };
 
+bool interrupt_enabled = 0;
 static struct Registers regs = {0};
 
 #   define P2(n) n, n^1, n^1, n
@@ -187,6 +188,8 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 
 int main(void)
 {
+    (void) (uint64_t) regs.spl;
+    (void) (uint64_t) regs.sph;
     uint8_t lo_byte, hi_byte, res;
     uint16_t address;
     regs.pc = 0x0000; // set initial program counter
@@ -829,8 +832,8 @@ int main(void)
                 CMP(regs.l);
                 break;
             case CMP_M:
-                res = read_byte(regs.hl);
-                CMP(res);
+                lo_byte = read_byte(regs.hl);
+                CMP(lo_byte);
                 break;
 
             case CMP_A:
@@ -855,8 +858,8 @@ int main(void)
                 PUSH(regs.c, regs.b);
                 break;
             case ADI:
-                res = read_byte(++regs.pc);
-                ADD(res, 0);
+                lo_byte = read_byte(++regs.pc);
+                ADD(lo_byte, 0);
                 break;
             case RST_0:
                 break;
@@ -879,8 +882,8 @@ int main(void)
                 CALL();
                 break;
             case ACI:
-                res = read_byte(++regs.pc);
-                ADD(res, regs.cf);
+                lo_byte = read_byte(++regs.pc);
+                ADD(lo_byte, regs.cf);
                 break;
 
             case RST_1:
@@ -904,6 +907,8 @@ int main(void)
                 PUSH(regs.e, regs.d);
                 break;
             case SUI:
+                lo_byte = read_byte(++regs.pc);
+                SUB(lo_byte, 0);
                 break;
             case RST_2:
                 RST(2);
@@ -912,7 +917,7 @@ int main(void)
                 if (regs.cf) RET();
                 break;
             case SHLX:
-                /* Not implemented in 8080 */
+                /* not implemented in 8080 */
                 break;
             case JC:
                 if (regs.cf) JUMP();
@@ -925,6 +930,8 @@ int main(void)
             case JNUI:
                 break;
             case SBI:
+                lo_byte = read_byte(++regs.pc);
+                SUB(lo_byte, 1);
                 break;
 
             case RST_3:
@@ -934,70 +941,127 @@ int main(void)
                 if (regs.pf) RET();
                 break;
             case POP_H:
+                POP(regs.l, regs.h);
                 break;
             case JPO:
+                if (!regs.pf) JUMP();
                 break;
             case XTHL:
+                lo_byte = regs.l;
+                hi_byte = regs.h;
+                regs.l = read_byte(regs.sp);
+                regs.h = read_byte(regs.sp + 1);
+                write_byte(regs.sp, lo_byte);
+                write_byte(regs.sp + 1, hi_byte);
                 break;
             case CPO:
+                if (!regs.pf) CALL();
                 break;
             case PUSH_H:
+                PUSH(regs.l, regs.h);
                 break;
             case ANI:
+                lo_byte = read_byte(++regs.pc);
+                ANA(lo_byte);
                 break;
             case RST_4:
                 RST(4);
                 break;
             case RPE:
-                if (regs.pf)
-                    RET();
+                if (regs.pf) RET();
                 break;
             case PCHL:
+                regs.pcl = regs.l;
+                regs.pch = regs.h;
                 break;
             case JPE:
+                if (regs.pf) JUMP();
                 break;
             case XCHG:
+                lo_byte = regs.l;
+                hi_byte = regs.h;
+                regs.l = regs.e;
+                regs.h = regs.d;
+                regs.e = lo_byte;
+                regs.d = hi_byte;
                 break;
             case CPE:
+                if (regs.pf) CALL();
                 break;
             case LHLX:
+                /* not implemented in 8080 */
                 break;
             case XRI:
+                lo_byte = read_byte(++regs.pc);
+                XRA(lo_byte);
                 break;
 
             case RST_5:
-                RST(5);
+                RST(050);
                 break;
             case RP:
+                if (!regs.sf) RET();
                 break;
             case POP_PSW:
+                lo_byte = read_byte(regs.sp);
+                hi_byte = read_byte(regs.sp + 1);
+                regs.cf  = 0x01 & lo_byte;
+                regs.pf  = 0x04 & lo_byte;
+                regs.acf = 0x10 & lo_byte;
+                regs.zf  = 0x40 & lo_byte;
+                regs.sf  = 0x80 & lo_byte;
+
+                regs.a = hi_byte;
+                regs.sp += 2;
                 break;
             case JP:
+                if (!regs.sf) JUMP();
                 break;
             case DI:
+                interrupt_enabled = 0;
                 break;
             case CP:
+                if (!regs.sf) CALL();
                 break;
             case PUSH_PSW:
+                lo_byte = 0x02;
+                lo_byte |= regs.cf;
+                lo_byte |= regs.pf << 2;
+                lo_byte |= regs.acf << 4;
+                lo_byte |= regs.zf << 6;
+                lo_byte |= regs.sf << 7;
+                write_byte(regs.sp - 1, regs.a);
+                write_byte(regs.sp - 2, lo_byte);
+                regs.sp -= 2;
                 break;
             case ORI:
+                lo_byte = read_byte(++regs.pc);
+                ORA(lo_byte);
                 break;
             case RST_6:
                 RST(6);
                 break;
             case RM:
+                if (regs.sf) RET();
                 break;
             case SPHL:
+                regs.sp = regs.hl;
                 break;
             case JM:
+                if (regs.sf) JUMP();
                 break;
             case EI:
+                interrupt_enabled = 1;
                 break;
             case CM:
+                if (regs.sf) CALL();
                 break;
             case JUI:
+                /* not implemented in 8080 */
                 break;
             case CPI:
+                lo_byte = read_byte(++regs.pc);
+                CMP(lo_byte);
                 break;
 
             case RST_7:

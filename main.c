@@ -2,6 +2,8 @@
 #include <opcodes.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 /* Define the registers */
 struct Registers {
@@ -64,6 +66,11 @@ static uint8_t read_byte(uint16_t addr)
     return memory[addr];
 }
 
+static uint8_t read_next_byte()
+{
+    return read_byte(regs.pc++);
+}
+
 /* Write a byte to memory */
 static void write_byte(uint16_t addr, uint8_t value)
 {
@@ -88,8 +95,8 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 }
 
 #define COMPOSE_ADDR() do {                 \
-    lo_byte = read_byte(++regs.pc);         \
-    hi_byte = read_byte(++regs.pc);         \
+    lo_byte = read_next_byte();         \
+    hi_byte = read_next_byte();         \
     address = merge_bytes(lo_byte, hi_byte);\
 } while(0)
 
@@ -186,24 +193,63 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
     test_pzs(regs.a);                       \
 } while(0)
 
+unsigned char *load_rom(unsigned char bufptr[static 1], const char filename[static 1])
+{
+    /* get true path */
+    const char* base = "../rom/";
+    const size_t file_size = 0x800;
+    const size_t len = strlen(base) + strlen(filename) + 1;
+    char *path = malloc(len);
+    snprintf(path, len, "%s%s", base, filename);
+
+    FILE *file = fopen(path, "r");
+    if (!file) {
+        fprintf(stderr, "failed to open %s\n", path);
+        free(path);
+        return NULL;
+    }
+    if (!fread(bufptr, file_size, 1, file)) {
+        fprintf(stderr, "failed to read %s\n", path);
+        free(path);
+        fclose(file);
+        return NULL;
+    }
+    fclose(file);
+    free(path);
+    return bufptr + file_size;
+}
+
 int main(void)
 {
-    (void) (uint64_t) regs.spl;
-    (void) (uint64_t) regs.sph;
+    /* load rom into memory */
+    unsigned char *rom = memory;
+    if (!(rom = load_rom(rom, "invaders.h")))
+        return 1;
+    if (!(rom = load_rom(rom, "invaders.g")))
+        return 1;
+    if (!(rom = load_rom(rom, "invaders.f")))
+        return 1;
+    if (!(rom = load_rom(rom, "invaders.e")))
+        return 1;
+
     uint8_t lo_byte, hi_byte, res;
     uint16_t address;
-    regs.pc = 0x0000; // set initial program counter
+    lo_byte = hi_byte = res = address = 0;
+    regs.pc = 0;
+    regs.bc = 0;
 
-    // main loop
-    for (regs.pc = 0x100;; ++regs.pc) {
-        enum OpCode opcode = read_byte(regs.pc);
+    size_t times_run = 0;
+    while(1) {
+        times_run++;
+        enum OpCode opcode = read_next_byte();
+        int x = 1;
         switch (opcode) {
             case NOP:
                 /* do nothing */
                 break;
             case LXI_B:
-                regs.c = read_byte(++regs.pc);
-                regs.b = read_byte(++regs.pc);
+                regs.c = read_next_byte();
+                regs.b = read_next_byte();
                 break;
             case STAX_B:
                 write_byte(regs.bc, regs.a);
@@ -218,7 +264,7 @@ int main(void)
                 DCR(b);
                 break;
             case MVI_B:
-                regs.b = read_byte(++regs.pc);
+                regs.b = read_next_byte();
                 break;
             case RLC:
                 regs.a = (regs.a << 1) | (regs.a >> 7);
@@ -243,7 +289,7 @@ int main(void)
                 DCR(c);
                 break;
             case MVI_C:
-                regs.c = read_byte(++regs.pc);
+                regs.c = read_next_byte();
                 break;
 
             case RRC:
@@ -254,9 +300,8 @@ int main(void)
                 /* not implemented in 8080 */
                 break;
             case LXI_D:
-                regs.e = read_byte(++regs.pc);
-                regs.d = read_byte(++regs.pc);
-                regs.pc += 2;
+                regs.e = read_next_byte();
+                regs.d = read_next_byte();
                 break;
             case STAX_D:
                 write_byte(regs.de, regs.a);
@@ -271,7 +316,7 @@ int main(void)
                 DCR(d);
                 break;
             case MVI_D:
-                regs.d = read_byte(++regs.pc);
+                regs.d = read_next_byte();
                 break;
             case RAL: {
                 /* we rotate left through the carry */
@@ -299,7 +344,7 @@ int main(void)
                 DCR(e);
                 break;
             case MVI_E:
-                regs.e = read_byte(++regs.pc);
+                regs.e = read_next_byte();
                 break;
 
             case RAR:
@@ -312,9 +357,8 @@ int main(void)
                 /* not implemented in 8080 */
                 break;
             case LXI_H:
-                regs.l = read_byte(++regs.pc);
-                regs.h = read_byte(++regs.pc);
-                regs.pc += 2;
+                regs.l = read_next_byte();
+                regs.h = read_next_byte();
                 break;
             case SHLD: {
                 COMPOSE_ADDR();
@@ -332,7 +376,7 @@ int main(void)
                 DCR(h);
                 break;
             case MVI_H:
-                regs.h = read_byte(++regs.pc);
+                regs.h = read_next_byte();
                 break;
             case DAA: {
                 uint8_t old_cf = regs.cf;
@@ -377,7 +421,7 @@ int main(void)
                 DCR(l);
                 break;
             case MVI_L:
-                regs.l = read_byte(++regs.pc);
+                regs.l = read_next_byte();
                 break;
             case CMA:
                 regs.a = ~regs.a;
@@ -386,8 +430,8 @@ int main(void)
                 /* not implemented in 8080 */
                 break;
             case LXI_SP:
-                regs.spl = read_byte(++regs.pc);
-                regs.sph = read_byte(++regs.pc);
+                regs.spl = read_next_byte();
+                regs.sph = read_next_byte();
                 break;
             case STA:
                 COMPOSE_ADDR();
@@ -408,7 +452,7 @@ int main(void)
                 test_ac(res, res + 1, 0x1);
                 break;
             case MVI_M:
-                res = read_byte(++regs.pc);
+                res = read_next_byte();
                 write_byte(regs.hl, res);
                 break;
             case STC:
@@ -432,7 +476,7 @@ int main(void)
                 DCR(a);
                 break;
             case MVI_A:
-                regs.a = read_byte(++regs.pc);
+                regs.a = read_next_byte();
                 break;
 
             case CMC:
@@ -858,7 +902,7 @@ int main(void)
                 PUSH(regs.c, regs.b);
                 break;
             case ADI:
-                lo_byte = read_byte(++regs.pc);
+                lo_byte = read_next_byte();
                 ADD(lo_byte, 0);
                 break;
             case RST_0:
@@ -882,7 +926,7 @@ int main(void)
                 CALL();
                 break;
             case ACI:
-                lo_byte = read_byte(++regs.pc);
+                lo_byte = read_next_byte();
                 ADD(lo_byte, regs.cf);
                 break;
 
@@ -907,7 +951,7 @@ int main(void)
                 PUSH(regs.e, regs.d);
                 break;
             case SUI:
-                lo_byte = read_byte(++regs.pc);
+                lo_byte = read_next_byte();
                 SUB(lo_byte, 0);
                 break;
             case RST_2:
@@ -930,7 +974,7 @@ int main(void)
             case JNUI:
                 break;
             case SBI:
-                lo_byte = read_byte(++regs.pc);
+                lo_byte = read_next_byte();
                 SUB(lo_byte, 1);
                 break;
 
@@ -961,7 +1005,7 @@ int main(void)
                 PUSH(regs.l, regs.h);
                 break;
             case ANI:
-                lo_byte = read_byte(++regs.pc);
+                lo_byte = read_next_byte();
                 ANA(lo_byte);
                 break;
             case RST_4:
@@ -992,7 +1036,7 @@ int main(void)
                 /* not implemented in 8080 */
                 break;
             case XRI:
-                lo_byte = read_byte(++regs.pc);
+                lo_byte = read_next_byte();
                 XRA(lo_byte);
                 break;
 
@@ -1035,7 +1079,7 @@ int main(void)
                 regs.sp -= 2;
                 break;
             case ORI:
-                lo_byte = read_byte(++regs.pc);
+                lo_byte = read_next_byte();
                 ORA(lo_byte);
                 break;
             case RST_6:
@@ -1060,7 +1104,7 @@ int main(void)
                 /* not implemented in 8080 */
                 break;
             case CPI:
-                lo_byte = read_byte(++regs.pc);
+                lo_byte = read_next_byte();
                 CMP(lo_byte);
                 break;
 
@@ -1068,8 +1112,6 @@ int main(void)
                 RST(7);
                 break;
         }
-        if (regs.pc == UINT16_MAX)
-            break;
     }
 
     return 0;

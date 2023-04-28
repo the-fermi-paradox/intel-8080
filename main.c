@@ -68,7 +68,7 @@ static uint8_t read_byte(uint16_t addr)
 
 static uint16_t read_word(uint16_t addr)
 {
-    return *((uint16_t*) memory + addr);
+    return * (uint16_t*) (memory + addr);
 }
 
 static uint8_t read_next_byte()
@@ -202,11 +202,11 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
     test_pzs(regs.a);                       \
 } while(0)
 
-int load_rom(unsigned char **bufptr, const char *filename)
+size_t load_rom(unsigned char **bufptr, const char *filename)
 {
     /* get true path */
     const char *base = "../rom/";
-    const size_t len = strlen(base) + strlen(filename) + 1;
+    const size_t len = snprintf(NULL, 0, "%s%s", base, filename) + 1;
     char *path = malloc(len);
     snprintf(path, len, "%s%s", base, filename);
 
@@ -217,15 +217,15 @@ int load_rom(unsigned char **bufptr, const char *filename)
         return 0;
     }
 
-    if (fseeko(file, 0L, SEEK_END) == EOF) {
+    if (fseek(file, 0L, SEEK_END) == EOF) {
         fprintf(stderr, "failed to seek on %s\n", filename);
         fclose(file);
         return 0;
     }
-    const size_t bytes_read = ftello(file);
+    const size_t bytes_read = ftell(file);
     rewind(file);
 
-    if (!fread(bufptr, bytes_read, 1, file)) {
+    if (!fread(*bufptr, bytes_read, 1, file)) {
         fprintf(stderr, "failed to read %s\n", filename);
         fclose(file);
         return 0;
@@ -241,13 +241,13 @@ int main(int argc, char **argv)
         fprintf(stderr, "not enough arguments");
         return 1;
     }
+    unsigned char *rom = memory;
     while (--argc) {
         /* load rom into memory
          * files are loaded left to right */
-        unsigned char *rom = memory;
-        int bytes_read;
-        if (!(bytes_read = load_rom(&rom, *argv++))) {
-            return 1;
+        size_t bytes_read;
+        if (!(bytes_read = load_rom(&rom, *++argv))) {
+            return EXIT_FAILURE;
         }
         rom += bytes_read;
     }
@@ -962,6 +962,7 @@ int main(int argc, char **argv)
                 JUMP(!regs.cf);
                 break;
             case OUT:
+                read_next_byte();
                 break;
             case CNC:
                 CALL(!regs.cf);
@@ -986,6 +987,7 @@ int main(int argc, char **argv)
                 JUMP(regs.cf);
                 break;
             case IN:
+                read_next_byte();
                 break;
             case CC:
                 CALL(regs.cf);

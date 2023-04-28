@@ -66,6 +66,11 @@ static uint8_t read_byte(uint16_t addr)
     return memory[addr];
 }
 
+static uint16_t read_word(uint16_t addr)
+{
+    return *((uint16_t*) memory + addr);
+}
+
 static uint8_t read_next_byte()
 {
     return read_byte(regs.pc++);
@@ -86,7 +91,7 @@ static inline void test_pzs(uint8_t res)
 {
     regs.pf = parity_table[res];
     regs.zf = (res == 0);
-    regs.sf = !!(res & (0x80));
+    regs.sf = (res & (0x80));
 }
 
 static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
@@ -95,8 +100,8 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 }
 
 #define COMPOSE_ADDR() do {                 \
-    lo_byte = read_next_byte();         \
-    hi_byte = read_next_byte();         \
+    lo_byte = read_next_byte();             \
+    hi_byte = read_next_byte();             \
     address = merge_bytes(lo_byte, hi_byte);\
 } while(0)
 
@@ -130,24 +135,28 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
     regs.sp -= 2;                           \
 } while(0)
 
-#define RET() do {                          \
-    POP(regs.pcl, regs.pch);                \
+#define RET(bl) do {                        \
+    if (bl) POP(regs.pcl, regs.pch);        \
 } while(0)
 
-#define JUMP() do {                         \
+#define JUMP(bl) do {                       \
     COMPOSE_ADDR();                         \
-    regs.pc = address;                      \
+    if (bl) {                               \
+        regs.pc = address;                  \
+    }                                       \
 } while (0)
 
-#define CALL() do {                         \
+#define CALL(bl) do {                       \
     COMPOSE_ADDR();                         \
-    PUSH(regs.pcl, regs.pch);               \
-    regs.pc = address;                      \
+    if (bl) {                               \
+        PUSH(regs.pcl, regs.pch);           \
+        regs.pc = address;                  \
+    }                                       \
 } while(0)
 
 #define RST(val) do {                       \
     PUSH(regs.pcl, regs.pch);               \
-    regs.pc = 8 * val;                       \
+    regs.pc = 8 * val;                      \
 } while(0)
 
 #define ADD(val, cy) do { \
@@ -193,50 +202,60 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
     test_pzs(regs.a);                       \
 } while(0)
 
-unsigned char *load_rom(unsigned char bufptr[static 1], const char filename[static 1])
+int load_rom(unsigned char **bufptr, const char *filename)
 {
     /* get true path */
-    const char* base = "../rom/";
-    const size_t file_size = 0x800;
+    const char *base = "../rom/";
     const size_t len = strlen(base) + strlen(filename) + 1;
     char *path = malloc(len);
     snprintf(path, len, "%s%s", base, filename);
 
     FILE *file = fopen(path, "r");
+    free(path);
     if (!file) {
-        fprintf(stderr, "failed to open %s\n", path);
-        free(path);
-        return NULL;
+        fprintf(stderr, "failed to open %s\n", filename);
+        return 0;
     }
-    if (!fread(bufptr, file_size, 1, file)) {
-        fprintf(stderr, "failed to read %s\n", path);
-        free(path);
+
+    if (fseeko(file, 0L, SEEK_END) == EOF) {
+        fprintf(stderr, "failed to seek on %s\n", filename);
         fclose(file);
-        return NULL;
+        return 0;
+    }
+    const size_t bytes_read = ftello(file);
+    rewind(file);
+
+    if (!fread(bufptr, bytes_read, 1, file)) {
+        fprintf(stderr, "failed to read %s\n", filename);
+        fclose(file);
+        return 0;
     }
     fclose(file);
-    free(path);
-    return bufptr + file_size;
+    return bytes_read;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
-    /* load rom into memory */
-    unsigned char *rom = memory;
-    if (!(rom = load_rom(rom, "invaders.h")))
+    /* Process arguments */
+    if (argc == 1) {
+        fprintf(stderr, "not enough arguments");
         return 1;
-    if (!(rom = load_rom(rom, "invaders.g")))
-        return 1;
-    if (!(rom = load_rom(rom, "invaders.f")))
-        return 1;
-    if (!(rom = load_rom(rom, "invaders.e")))
-        return 1;
+    }
+    while (--argc) {
+        /* load rom into memory
+         * files are loaded left to right */
+        unsigned char *rom = memory;
+        int bytes_read;
+        if (!(bytes_read = load_rom(&rom, *argv++))) {
+            return 1;
+        }
+        rom += bytes_read;
+    }
 
     uint8_t lo_byte, hi_byte, res;
     uint16_t address;
     lo_byte = hi_byte = res = address = 0;
     regs.pc = 0;
-    regs.bc = 0;
 
     size_t times_run = 0;
     while(1) {
@@ -884,19 +903,19 @@ int main(void)
                 CMP(regs.a);
                 break;
             case RNZ:
-                if (!regs.zf) RET();
+                RET(!regs.zf);
                 break;
             case POP_B:
                 POP(regs.c, regs.b);
                 break;
             case JNZ:
-                if (!regs.zf) JUMP();
+                JUMP(!regs.zf);
                 break;
             case JMP:
-                JUMP();
+                JUMP(1);
                 break;
             case CNZ:
-                if (!regs.zf) CALL();
+                CALL(!regs.zf);
                 break;
             case PUSH_B:
                 PUSH(regs.c, regs.b);
@@ -908,22 +927,22 @@ int main(void)
             case RST_0:
                 break;
             case RZ:
-                if (regs.zf) RET();
+                RET(regs.zf);
                 break;
             case RET:
-                RET();
+                RET(1);
                 break;
             case JZ:
-                if (regs.zf) JUMP();
+                JUMP(regs.zf);
                 break;
             case RSTV:
                 /* not implemented in 8080 */
                 break;
             case CZ:
-                if (regs.zf) CALL();
+                CALL(regs.zf);
                 break;
             case CALL:
-                CALL();
+                CALL(1);
                 break;
             case ACI:
                 lo_byte = read_next_byte();
@@ -934,18 +953,18 @@ int main(void)
                 RST(1);
                 break;
             case RNC:
-                if (!regs.cf) RET();
+                RET(!regs.cf);
                 break;
             case POP_D:
                 POP(regs.e, regs.d);
                 break;
             case JNC:
-                if (!regs.cf) JUMP();
+                JUMP(!regs.cf);
                 break;
             case OUT:
                 break;
             case CNC:
-                if (!regs.cf) CALL();
+                CALL(!regs.cf);
                 break;
             case PUSH_D:
                 PUSH(regs.e, regs.d);
@@ -958,18 +977,18 @@ int main(void)
                 RST(2);
                 break;
             case RC:
-                if (regs.cf) RET();
+                RET(regs.cf);
                 break;
             case SHLX:
                 /* not implemented in 8080 */
                 break;
             case JC:
-                if (regs.cf) JUMP();
+                JUMP(regs.cf);
                 break;
             case IN:
                 break;
             case CC:
-                if (regs.cf) CALL();
+                CALL(regs.cf);
                 break;
             case JNUI:
                 break;
@@ -982,13 +1001,13 @@ int main(void)
                 RST(3);
                 break;
             case RPO:
-                if (regs.pf) RET();
+                RET(regs.pf);
                 break;
             case POP_H:
                 POP(regs.l, regs.h);
                 break;
             case JPO:
-                if (!regs.pf) JUMP();
+                JUMP(!regs.pf);
                 break;
             case XTHL:
                 lo_byte = regs.l;
@@ -999,7 +1018,7 @@ int main(void)
                 write_byte(regs.sp + 1, hi_byte);
                 break;
             case CPO:
-                if (!regs.pf) CALL();
+                CALL(!regs.pf);
                 break;
             case PUSH_H:
                 PUSH(regs.l, regs.h);
@@ -1012,14 +1031,14 @@ int main(void)
                 RST(4);
                 break;
             case RPE:
-                if (regs.pf) RET();
+                RET(regs.pf);
                 break;
             case PCHL:
                 regs.pcl = regs.l;
                 regs.pch = regs.h;
                 break;
             case JPE:
-                if (regs.pf) JUMP();
+                JUMP(regs.pf);
                 break;
             case XCHG:
                 lo_byte = regs.l;
@@ -1030,7 +1049,7 @@ int main(void)
                 regs.d = hi_byte;
                 break;
             case CPE:
-                if (regs.pf) CALL();
+                CALL(regs.pf);
                 break;
             case LHLX:
                 /* not implemented in 8080 */
@@ -1044,7 +1063,7 @@ int main(void)
                 RST(050);
                 break;
             case RP:
-                if (!regs.sf) RET();
+                RET(!regs.sf);
                 break;
             case POP_PSW:
                 lo_byte = read_byte(regs.sp);
@@ -1059,13 +1078,13 @@ int main(void)
                 regs.sp += 2;
                 break;
             case JP:
-                if (!regs.sf) JUMP();
+                JUMP(!regs.sf);
                 break;
             case DI:
                 interrupt_enabled = 0;
                 break;
             case CP:
-                if (!regs.sf) CALL();
+                CALL(!regs.sf);
                 break;
             case PUSH_PSW:
                 lo_byte = 0x02;
@@ -1086,19 +1105,19 @@ int main(void)
                 RST(6);
                 break;
             case RM:
-                if (regs.sf) RET();
+                RET(regs.sf);
                 break;
             case SPHL:
                 regs.sp = regs.hl;
                 break;
             case JM:
-                if (regs.sf) JUMP();
+                JUMP(regs.sf);
                 break;
             case EI:
                 interrupt_enabled = 1;
                 break;
             case CM:
-                if (regs.sf) CALL();
+                CALL(regs.sf);
                 break;
             case JUI:
                 /* not implemented in 8080 */

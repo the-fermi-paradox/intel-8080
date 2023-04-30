@@ -1,3 +1,5 @@
+#ifndef EMU8080_OPCODEH
+#define EMU8080_OPCODEH
 enum OpCode {
   NOP      = 0x00,
   LXI_B    = 0x01,
@@ -256,3 +258,4 @@ enum OpCode {
   CPI      = 0xFE,
   RST_7    = 0xFF,
 };
+#endif

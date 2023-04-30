@@ -1,12 +1,15 @@
-UNAME := $(shell uname)
+CC=clang
 
-ifeq ($(UNAME), Darwin)
-CC=gcc-12
-endif
+CFLAGS = -std=c18 -Wall -Wextra -Werror -fsanitize=undefined -O0 -g3 -I.
+LDLIBS = -lubsan
+OBJECTS = main.o cpu.o
 
-CFLAGS = -std=c18 -fsanitize=undefined -Wall -Wextra -O0 -g3 -I.
-main : opcodes.h
+main : $(OBJECTS)
+	$(CC) -o main $(OBJECTS) $(LDLIBS)
+
+main.o : opcodes.h
+cpu.o : cpu.h opcodes.h
 
 .PHONY : clean
 clean :
-	rm main
+	rm main $(OBJECTS)

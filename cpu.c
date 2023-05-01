@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include "cpu.h"
 
 /* Initialize processor state */
@@ -71,9 +70,10 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 } while(0)
 
 #define EM_DCR(rg) do {                         \
-    --rg;                                       \
-    test_pzs(rg);                               \
-    test_ac(rg, rg + 1, 0x01);                  \
+    tmp = rg - 1;                               \
+    test_pzs(tmp);                              \
+    test_ac(tmp, rg, ~0x01);                    \
+    rg = tmp;                                   \
 } while(0)
 
 #define EM_DAD(rg) do {                         \
@@ -140,10 +140,10 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
     regs.cf = tmp & 0x100;                      \
 } while(0)
 
-#define EM_ANA(val) do {                        \
-    regs.a &= (val);                            \
+#define EM_ANA(val) do { \
     regs.cf = 0;                                \
     regs.acf = ((regs.a | val) & 0x08);         \
+    regs.a &= (val);                            \
     test_pzs(regs.a);                           \
 } while(0)
 
@@ -162,7 +162,7 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 } while(0)
 
 
-void instruction(enum OpCode opcode)
+int instruction(enum OpCode opcode)
 {
     uint8_t lo_byte, hi_byte, res;
     uint16_t address, tmp;
@@ -304,23 +304,20 @@ void instruction(enum OpCode opcode)
             break;
         case DAA: {
             uint8_t old_cf = regs.cf;
-            uint8_t old_a  = regs.a;
-            regs.cf = 0;
+            uint8_t hi_nib = regs.a >> 4;
+            uint8_t lo_nib = regs.a & 0x0F;
+            uint8_t add = 0;
 
-            if ((old_a & 0x0F) > 9 || regs.acf) {
-                /* extract a carry bit from the operation */
-                regs.cf = 0x100 & (regs.a += 0x06);
-                regs.cf |= old_cf;
-                regs.acf = 1;
+            if (lo_nib > 9 || regs.acf) {
+                add += 0x06;
             }
 
-            if (old_a > 0x99 || old_cf) {
-                regs.a += 0x60;
-                regs.cf = 1;
-            } else {
-                regs.cf = 0;
+            if (hi_nib > 9 || old_cf || ((hi_nib >= 9) && lo_nib > 9)) {
+                add += 0x60;
+                old_cf = 1;
             }
-            test_pzs(regs.a);
+            EM_ADD(add, 0);
+            regs.cf = old_cf;
             break;
         }
         case LDHI:
@@ -374,7 +371,7 @@ void instruction(enum OpCode opcode)
             res = read_byte(regs.hl) - 1;
             write_byte(regs.hl, res);
             test_pzs(res);
-            test_ac(res, res + 1, 0x1);
+            test_ac(res, res + 1, ~0x1);
             break;
         case MVI_M:
             res = read_next_byte();
@@ -577,7 +574,7 @@ void instruction(enum OpCode opcode)
             write_byte(regs.hl, regs.l);
             break;
         case HLT:
-            exit(0);
+            return EXIT_HLT;
         case MOV_M_A:
             write_byte(regs.hl, regs.a);
             break;
@@ -683,30 +680,30 @@ void instruction(enum OpCode opcode)
             EM_SUB(regs.a, 0);
             break;
         case SBB_B:
-            EM_SUB(regs.b, 1);
+            EM_SUB(regs.b, regs.cf);
             break;
         case SBB_C:
-            EM_SUB(regs.c, 1);
+            EM_SUB(regs.c, regs.cf);
             break;
         case SBB_D:
-            EM_SUB(regs.d, 1);
+            EM_SUB(regs.d, regs.cf);
             break;
         case SBB_E:
-            EM_SUB(regs.e, 1);
+            EM_SUB(regs.e, regs.cf);
             break;
         case SBB_H:
-            EM_SUB(regs.h, 1);
+            EM_SUB(regs.h, regs.cf);
             break;
         case SBB_L:
-            EM_SUB(regs.l, 1);
+            EM_SUB(regs.l, regs.cf);
             break;
         case SBB_M:
             res = read_byte(regs.hl);
-            EM_SUB(res, 1);
+            EM_SUB(res, regs.cf);
             break;
 
         case SBB_A:
-            EM_SUB(regs.a, 1);
+            EM_SUB(regs.a, regs.cf);
             break;
         case ANA_B:
             EM_ANA(regs.b);
@@ -1042,7 +1039,8 @@ void instruction(enum OpCode opcode)
             break;
     }
     if (regs.pc == 0) {
-        exit(0);
+        return EXIT_RST;
     }
+    return EXIT_OK;
 }
 

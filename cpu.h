@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include "opcodes.h"
 
+#define EXIT_OK  (0)
+#define EXIT_HLT (-1)
+#define EXIT_RST (1)
+
 /* Define the registers */
 struct Registers {
     union {
@@ -52,6 +56,6 @@ extern void write_byte(uint16_t addr, uint8_t value);
 extern uint8_t read_byte(uint16_t addr);
 extern uint8_t read_next_byte();
 extern uint16_t merge_bytes(uint8_t lo_byte, uint8_t hi_byte);
-extern void instruction(enum OpCode opcode);
+extern int instruction(enum OpCode opcode);
 
 #endif

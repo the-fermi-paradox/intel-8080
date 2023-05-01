@@ -12,11 +12,9 @@ int main(void) {
         /* clear memory */
         memset(&memory[0], 0, sizeof(memory));
         /* load rom into memory */
-        size_t bytes_read;
-        if (!(bytes_read = load_rom(rom, MEM_SIZE - offset, test_files[z]))) {
+        if (!load_rom(rom, MEM_SIZE - offset, test_files[z])) {
             return EXIT_FAILURE;
         }
-        rom = rom + bytes_read;
         regs.pc = offset;
         /* Inject ret instruction */
         memory[0x05] = RET;

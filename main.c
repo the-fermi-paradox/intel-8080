@@ -1,10 +1,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include "cpu.h"
-#include "io.h"
 #include <getopt.h>
 #include <errno.h>
+#include "cpu.h"
+#include "io.h"
 
 int main(int argc, char **argv)
 {

@@ -64,20 +64,20 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 } while(0)
 
 #define EM_INR(rg) do {                         \
-    ++rg;                                       \
-    test_pzs(rg);                               \
-    test_ac(rg, rg - 1, 0x01);                  \
+    ++(rg);                                     \
+    test_pzs((rg));                             \
+    test_ac((rg), (rg) - 1, 0x01);              \
 } while(0)
 
 #define EM_DCR(rg) do {                         \
-    tmp = rg - 1;                               \
+    tmp = (rg) - 1;                             \
     test_pzs(tmp);                              \
-    test_ac(tmp, rg, ~0x01);                    \
-    rg = tmp;                                   \
+    test_ac(tmp, (rg), ~0x01);                  \
+    (rg) = tmp;                                 \
 } while(0)
 
 #define EM_DAD(rg) do {                         \
-    uint32_t tmp32 = regs.hl + rg;              \
+    uint32_t tmp32 = regs.hl + (rg);            \
     regs.hl = (uint16_t) tmp32;                 \
     regs.cf = tmp32 & 0x10000;                  \
 } while(0)
@@ -115,7 +115,7 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 
 #define EM_RST(val) do {                        \
     EM_PUSH(regs.pcl, regs.pch);                \
-    regs.pc = 8 * val;                          \
+    regs.pc = 8 * (val);                        \
 } while(0)
 
 #define EM_ADD(val, cy) do {                    \
@@ -129,7 +129,7 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 /* This is just two's complement:
  * val is complemented, cy is the add bit */
 #define EM_SUB(val, cy) do {                    \
-    EM_ADD((~val) & 0xFF, !cy);                 \
+    EM_ADD((~val) & 0xFF, !(cy));               \
     regs.cf = !regs.cf;                         \
 } while(0)
 
@@ -142,7 +142,7 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 
 #define EM_ANA(val) do { \
     regs.cf = 0;                                \
-    regs.acf = ((regs.a | val) & 0x08);         \
+    regs.acf = ((regs.a | (val)) & 0x08);       \
     regs.a &= (val);                            \
     test_pzs(regs.a);                           \
 } while(0)

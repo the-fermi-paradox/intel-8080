@@ -1,11 +1,9 @@
-#include <stdlib.h>
-#include <string.h>
 #include "io.h"
 
 extern size_t load_rom(unsigned char *bufptr, size_t buflen, const char *filename)
 {
     /* get true path */
-    const char *base = "../rom/";
+    const char *base = "./roms/";
     const size_t len = snprintf(NULL, 0, "%s%s", base, filename) + 1;
     char *path = malloc(len);
     snprintf(path, len, "%s%s", base, filename);

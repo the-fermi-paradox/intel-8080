@@ -6,7 +6,8 @@
 
 const char *test_files[] = {"CPUTEST.COM", "TST8080.COM", "8080PRE.COM", "8080EXM.COM",};
 
-int main(void) {
+int main(void)
+{
     for (size_t z = 0; z < sizeof(test_files) / sizeof(test_files[0]); ++z) {
         size_t offset = 0x100;
         uint8_t *rom = memory + offset;

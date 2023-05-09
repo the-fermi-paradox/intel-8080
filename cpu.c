@@ -129,7 +129,7 @@ static inline void test_ac(uint8_t res, uint8_t op1, uint8_t op2)
 /* This is just two's complement:
  * val is complemented, cy is the add bit */
 #define EM_SUB(val, cy) do {                    \
-    EM_ADD((~val) & 0xFF, !(cy));               \
+    EM_ADD(~(val) & 0xFF, !(cy));               \
     regs.cf = !regs.cf;                         \
 } while(0)
 
